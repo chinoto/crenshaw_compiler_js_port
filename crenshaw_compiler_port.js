@@ -1,3 +1,6 @@
+String.prototype.splice=function(idx,rem,str) {
+	return this.slice(0,idx)+str+this.slice(idx+Math.abs(rem));
+};
 (function(console,process,require) {
 	'use strict';
 	
@@ -7,18 +10,25 @@
 				? require('fs').readFileSync('test.js','utf8')
 				//For faster tweaking and testing
 				: '((1+2)*3-(-3))/4'
-			).replace(/\s/g,'').split('')
+			)
 		,char_i=-1
-		,tab='\t'
 		,look='' //lookahead Character
+		,error_marker='[ERR]'
 	;
 	
 	function getChar() {
-		return look=string[++char_i];
+		return look=string[++char_i]||'';
 	}
 	
 	function error(s) {
-		console.log('\u0007Error: '+s+'.');
+		console.log(
+			'\u0007Error: '+s+'\n'
+			+'"'
+			+string
+				.splice(char_i,0,error_marker)
+				.slice(Math.max(char_i-10,0),char_i+10+error_marker.length)
+			+'"'
+		);
 	}
 	
 	function abort(s) {
@@ -30,43 +40,86 @@
 		abort(s+' Expected');
 	}
 	
-	function match(x) {
-		if (look===x) {getChar();}
-		else {expected("'"+x+"'");}
-	}
-	
 	function isAlpha(c) {
+		if (typeof c!=='string') {throw new Error('Expected String, got '+typeof c);}
 		return (/[a-z]/i).test(c);
 	}
 	
 	function isDigit(c) {
+		if (typeof c!=='string') {throw new Error('Expected String, got '+typeof c);}
 		return (/[0-9]/).test(c);
+	}
+	
+	function isAlNum(c) {
+		if (typeof c!=='string') {throw new Error('Expected String, got '+typeof c);}
+		return isAlpha(c)||isDigit(c);
+	}
+	
+	function isAddop(c) {
+		if (typeof c!=='string') {throw new Error('Expected String, got '+typeof c);}
+		return (/[+\-]/).test(c);
+	}
+	
+	function isWhite(c) {
+		if (typeof c!=='string') {throw new Error('Expected String, got '+typeof c);}
+		return (/\s/).test(c);
+	}
+	
+	function skipWhite() {
+		while (isWhite(look)) {
+			getChar();
+		}
+	}
+	
+	function match(x) {
+		if (look===x) {
+			getChar();
+			skipWhite();
+		}
+		else {expected("'"+x+"'");}
 	}
 	
 	function getName() {
 		if (!isAlpha(look)) {expected('Name');}
-		var ret=look;
-		getChar();
+		var ret='';
+		while (isAlNum(look)) {
+			ret+=look;
+			getChar();
+		}
+		skipWhite();
 		return ret;
 	}
 	
 	function getNum() {
 		if (!isDigit(look)) {expected('Integer');}
-		var ret=look;
+		var ret='';
 		getChar();
+		while (isDigit(look)) {
+			ret+=look;
+			getChar();
+		}
+		skipWhite();
 		return ret;
 	}
 	
 	function emit(s) {
-		console.log(tab+s);
+		console.log('\t'+s);
 	}
 	
 	function emitLn(s) {
 		emit(s);
 	}
 	
-	function init() {
-		getChar();
+	function ident() {
+		var name=getName();
+		if (look==='(') {
+			match('(');
+			match(')');
+			emitLn('BSR ' + name);
+		}
+		else {
+			emitLn('MOVE ' + name + '(PC),D0');
+		}
 	}
 	
 	function factor() {
@@ -74,6 +127,9 @@
 			match('(');
 			expression();
 			match(')');
+		}
+		else if (isAlpha(look)) {
+			ident();
 		}
 		else {
 			emitLn('MOVE #'+getNum()+',D0');
@@ -118,10 +174,6 @@
 		emitLn('NEG D0');
 	}
 	
-	function isAddop(c) {
-		return (/[+\-]/).test(c);
-	}
-	
 	function expression() {
 		if (isAddop(look)) {emitLn('CLR D0');}
 		else {term();}
@@ -136,6 +188,27 @@
 		}
 	}
 	
+	function assignment() {
+		var name=getName();
+		match('=');
+		expression();
+		emitLn('LEA ' + name + '(PC),A0');
+		emitLn('MOVE D0,(A0)');
+	}
+	
+	function init() {
+		getChar();
+		skipWhite();
+	}
+	
 	init();
-	expression();
+	assignment();
+	if (look&&look!=='\n') {expected('NewLine');}
+	if (string[string.length-1]!=='\n') {expected('NewLine at EOF');}
+	
+	if (look!=='') {
+		error(
+			'Invalid/Unsupported Code'
+		);
+	}
 }(console,process,require));
