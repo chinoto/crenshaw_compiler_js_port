@@ -1,1 +1,1 @@
-y=a*x*x+b*x+c
+afi=bece

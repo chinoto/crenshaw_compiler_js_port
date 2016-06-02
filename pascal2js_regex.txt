@@ -1,0 +1,22 @@
+#Reindent with tabs
+ {3}
+\t
+
+#Remove comments
+\s*\{[^}]*\}\s*
+\n
+
+#Replace function definition
+(?:function|procedure)\s*(\w+)(?:\(([^()]*)\))?(?:: \w+)?;\s*(var ((?!begin).)*)?\s*begin
+function \1\(\2\) \{\n\t\3
+
+#Replace end block
+end;
+\}
+
+#Remove type hints
+:\s*\w+
+
+#Translate assignment operator
+\s*:=\s*
+=
