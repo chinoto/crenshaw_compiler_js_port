@@ -7,22 +7,25 @@
 	var
 		string=(true
 				//Probably considered bad practice, but this is a single purpose script with no async tasks... yet?
-				? require('fs').readFileSync('test.js','utf8')
+				? require('fs').readFileSync('test_interpreter.js','utf8')
 				//For faster tweaking and testing
 				: '((1+2)*3-(-3))/4'
 			)
 		,char_i=-1
 		,look='' //lookahead Character
 		,error_marker='[ERR]'
+		,table={}
+		,prompt=require('cli-core').prompt
 	;
 	
 	function getChar() {
-		return look=string[++char_i]||'';
+		look=string[++char_i]||'';
+		return look;
 	}
 	
 	function error(s) {
-		console.log(
-			'\u0007Error: '+s+'\n'
+		throw new Error(
+			s+'\n'
 			+'"'
 			+string
 				.splice(char_i,0,error_marker)
@@ -71,6 +74,8 @@
 		}
 	}
 	
+	function newLine() {skipWhite();}
+	
 	function match(x) {
 		if (look===x) {
 			getChar();
@@ -93,13 +98,12 @@
 	function getNum() {
 		if (!isDigit(look)) {expected('Integer');}
 		var ret='';
-		getChar();
 		while (isDigit(look)) {
 			ret+=look;
 			getChar();
 		}
 		skipWhite();
-		return ret;
+		return +ret;
 	}
 	
 	function emit(s) {
@@ -107,6 +111,7 @@
 	}
 	
 	function emitLn(s) {
+		throw new Error('Stop using this!');
 		emit(s);
 	}
 	
@@ -123,77 +128,78 @@
 	}
 	
 	function factor() {
+		var value;
 		if (look==='(') {
 			match('(');
-			expression();
+			value=expression();
 			match(')');
 		}
 		else if (isAlpha(look)) {
-			ident();
+			value=table[getName()];
 		}
 		else {
-			emitLn('MOVE #'+getNum()+',D0');
+			value=getNum();
 		}
-	}
-	
-	function multiply() {
-		match('*');
-		factor();
-		emitLn('MULS (SP)+,D0');
-	}
-	
-	function divide() {
-		match('/');
-		factor();
-		emitLn('MOVE (SP)+,D1');
-		emitLn('DIVS D1,D0');
+		return value;
 	}
 	
 	function term() {
-		factor();
+		var value=factor();
+		
 		while (/[*\/]/.test(look)) {
-			emitLn('MOVE D0,-(SP)');
 			switch (look) {
-				case '*': multiply(); break;
-				case '/': divide(); break;
+				case '*':
+					match('*');
+					value*=factor();
+					break;
+				case '/':
+					match('*');
+					value/=factor();
+					break;
 				default: expected('Mulop');
 			}
 		}
-	}
-	
-	function add() {
-		match('+');
-		term();
-		emitLn('ADD (SP)+,D0');
-	}
-	
-	function subtract() {
-		match('-');
-		term();
-		emitLn('SUB (SP)+,D0');
-		emitLn('NEG D0');
+		return value;
 	}
 	
 	function expression() {
-		if (isAddop(look)) {emitLn('CLR D0');}
-		else {term();}
+		var value=0;
+		if (!isAddop(look)) {value=term();}
 		
 		while (isAddop(look)) {
-			emitLn('MOVE D0,-(SP)');
 			switch (look) {
-				case '+': add(); break;
-				case '-': subtract(); break;
+				case '+':
+					match('+');
+					value+=term();
+					break;
+				case '-':
+					match('-');
+					value-=term();
+					break;
 				default: expected('Addop');
 			}
 		}
+		return value;
 	}
 	
 	function assignment() {
 		var name=getName();
 		match('=');
-		expression();
-		emitLn('LEA ' + name + '(PC),A0');
-		emitLn('MOVE D0,(A0)');
+		table[name]=expression();
+	}
+	
+	function input() {
+		match('?');
+		var name=getName();
+		prompt('Specify a value for "'+name+'"',function(err,input) {
+			table[name]=+input;
+		});
+		return table[name];
+	}
+	
+	function output() {
+		match('!');
+		console.log(table[getName()]);
 	}
 	
 	function init() {
@@ -202,7 +208,15 @@
 	}
 	
 	init();
-	assignment();
+	while (look!=='') {
+		switch (look) {
+			case '?': input( ); break;
+			case '!': output(); break;
+			default: assignment();
+		}
+		match('.');
+		newLine();
+	}
 	if (look&&look!=='\n') {expected('NewLine');}
 	if (string[string.length-1]!=='\n') {expected('NewLine at EOF');}
 	
@@ -211,4 +225,5 @@
 			'Invalid/Unsupported Code'
 		);
 	}
+	console.log(JSON.stringify(table));
 }(console,process,require));

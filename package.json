@@ -1,0 +1,15 @@
+{
+  "name": "crenshaw_compiler_port",
+  "version": "1.0.0",
+  "description": "## Story Time! ### Why?!? ... Why not? I wanted to compile (or [transpile][Transpiler] rather?) programs to [Expression 2] (pretty much for the hell of it), and I've always thought [LLVM] was rather interesting, so I decided I would try building a backend for it. But before I could even contemplate doing that, I thought it would be good to learn how to build a basic compiler first so I cover all the basic knowledge (even if I don't need it, it's good to understand things).",
+  "main": "crenshaw_compiler_port.js",
+  "dependencies": {
+    "cli-core": "^1.0.1"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC"
+}
