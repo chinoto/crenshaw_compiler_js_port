@@ -1,5 +1,5 @@
 # Crenshaw's Compiler Ported to Javascript
-# by [Damian J Pound] (aka Chinoto Vokro)
+# by [Damian J Pound] aka Chinoto Vokro
 
 ## Story Time!
 ### Why?!? ... Why not?
