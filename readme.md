@@ -31,7 +31,7 @@ Markdown assistance provided by [Dillinger]
 [Crenshaw Tutorial]: <http://compilers.iecc.com/crenshaw/>
 [Dillinger]: <http://dillinger.io/>
 
-[#]: < Nonsense about using javascript instead of a typical compiler language. >
+[//]: # (Nonsense about using javascript instead of a typical compiler language.)
 [dynamically typed]: <https://en.wikipedia.org/wiki/Programming_language#Static_versus_dynamic_typing>
 [interpreted]: <https://en.wikipedia.org/wiki/Interpreted_language>
 [scripting]: <https://en.wikipedia.org/wiki/Scripting_language>
