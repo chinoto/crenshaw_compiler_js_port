@@ -13,8 +13,13 @@
 			)
 		,char_i=-1
 		,look='' //lookahead Character
+		,token=''
+		,value=''
 		,lCount=0
 		,error_marker='[ERR]'
+		,kwList=['IF','ELSE','ENDIF','END']
+		,kwCode='xilee'
+		,stdout=process.stdout
 	;
 
 	function getChar() {return look=string[++char_i]||'';}
@@ -38,14 +43,22 @@
 	function expected(s) {abort(s + ' expected');}
 
 	function match(x) {
-		if (look===x) {getChar();}
-		else {expected('"'+x+'"');}
+		if (look!==x) {expected('"'+x+'"');}
+		getChar();
+		skipWhite();
+	}
+
+	function matchString(x) {
+		if (value!==x) {expected('"'+x+'"');}
 	}
 
 	function isAlpha(c) {return /[a-z]/i.test(c);}
 	function isDigit(c) {return /[0-9]/.test(c);}
+	function isAlNum(c) {return /[a-z0-9]/i.test(c);}
 	function isBoolean(c) {return /[tf]/i.test(c);}
+	function isOp(c) {return /[+\-\*\/<>:=]/.test(c);}
 	function isAddop(c) {return /[+\-]/.test(c);}
+	function isMulop(c) {return /[\*\/]/.test(c);}
 	function isOrop(c) {return /[|~]/.test(c);}
 	function isRelop(c) {return /[=#<>]/.test(c);}
 	function isWhite(c) {return /[ \t]/.test(c);}
@@ -56,44 +69,80 @@
 		}
 	}
 
+
+	function skipComma() {
+		skipWhite();
+		while (look===',') {
+			getChar();
+			skipWhite();
+		}
+	}
+
 	function getName() {
+		value='';
+		while (/[\r\n]/.test(look)) {fin();}
 		if (!isAlpha(look)) {expected('Name');}
-		var ret=look;
-		getChar();
-		return ret;
+		while (isAlNum(look)) {
+			value+=look.toUpperCase();
+			getChar();
+		}
+		skipWhite();
 	}
 
 	function getNum() {
 		if (!isDigit(look)) {expected('Integer');}
-		var ret=look;
-		getChar();
-		return ret;
+		value='';
+		while (isDigit(look)) {
+			value+=look;
+			getChar();
+		}
+		token='#';
+		skipWhite();
+	}
+
+	function getOp() {
+		if (!isOp(look)) {expected('Operator');}
+		value='';
+		while (isOp(look)) {
+			value+=look;
+			getChar();
+		}
+		token=(value.length===1 ? value : '?');
+		skipWhite();
 	}
 
 	function getBoolean() {
 		if (!isBoolean(look)) {expected('Boolean Literal');}
-		var ret=/T/i.test(look);
+		value=/T/i.test(look);
 		getChar();
-		return ret;
+	}
+
+	function scan() {
+		getName();
+		token=kwCode[lookup(value)+1];
+	}
+
+	function lookup(s) {
+		return kwList.indexOf(s);
 	}
 
 	function newLabel() {return 'L'+(++lCount);}
 
-	function postLabel(L) {console.log(L, ':');}
+	function postLabel(L) {stdout.write(L+':');}
 
-	function emit(s) {console.log('\t'+s);}
+	function emit(s) {stdout.write('\t'+s);}
 
-	function emitLn(s) {emit(s);}
+	function emitLn(s) {emit(s+'\n');}
 
 	function ident() {
-		var name=getName();
+		getName();
 		if (look === '(') {
 			match('(');
 			match(')');
-			emitLn('BSR ' + name);
+			emitLn('BSR ' + value);
 		}
 		else {
-			emitLn('MOVE ' + name + '(PC),D0');
+			emitLn('MOVE ' + value + '(PC),D0');
 		}
 	}
 
@@ -107,26 +156,20 @@
 			ident();
 		}
 		else {
-			emitLn('MOVE #' + getNum() + ',D0');
+			getNum();
+			emitLn('MOVE #' + value + ',D0');
 		}
 	}
 
 	function signedFactor() {
-		if (look === '+') {
+		var neg=look==='-';
+		if (isAddop(look)) {
 			getChar();
+			skipWhite();
 		}
-		if (look === '-') {
-			getChar();
-			if (isDigit(look)) {
-				emitLn('MOVE #-' + getNum() + ',D0')
-			}
-			else {
-				factor();
-				emitLn('NEG D0');
-			}
-		}
-		else {
-			factor();
+		factor();
+		if (neg) {
+			emitLn('NEG D0');
 		}
 	}
 
@@ -146,15 +189,24 @@
 		emitLn('DIVS D1,D0');
 	}
 
-	function term() {
-		signedFactor();
-		while (/[*\/]/.test(look)) {
+	function term1() {
+		while (isMulop(look)) {
 			emitLn('MOVE D0,-(SP)');
 			switch (look) {
 				case '*': multiply(); break;
 				case '/': divide(); break;
 			}
 		}
+	}
+
+	function term() {
+		factor();
+		term1();
+	}
+
+	function firstTerm() {
+		signedFactor();
+		term1();
 	}
 
 	function add() {
@@ -171,14 +223,18 @@
 	}
 
 	function expression() {
-		term();
+		firstTerm();
 		while (isAddop(look)) {
 			emitLn('MOVE D0,-(SP)');
-			switch (/[+-]/.test(look)) {
+			switch (look) {
 				case '+': add(); break;
 				case '-': subtract(); break;
 			}
 		}
+	}
+
+	function condition() {
+		emitLn('Condition');
 	}
 
 	function boolTerm() {
@@ -204,7 +260,8 @@
 
 	function boolFactor() {
 		if (isBoolean(look)) {
-			if (getBoolean()) {
+			getBoolean();
+			if (value) {
 				emitLn('MOVE #-1,D0');
 			}
 			else {
@@ -239,23 +296,21 @@
 		}
 	}
 
-	function doIf(L) {
+	function doIf() {
 		var L1, L2;
-		match('i');
-		boolExpression();
+		condition();
 		L1=newLabel();
 		L2=L1;
 		emitLn('BEQ ' + L1);
-		block(L);
-		if (look==='l') {
-			match('l');
+		block();
+		if (token==='l') {
 			L2=newLabel();
 			emitLn('BRA ' + L2);
 			postLabel(L1);
-			block(L);
+			block();
 		}
-		match('e');
 		postLabel(L2);
+		matchString('ENDIF');
 	}
 
 	function doWhile() {
@@ -302,16 +357,16 @@
 		match('f');
 		L1=newLabel();
 		L2=newLabel();
-		name=getName();
+		getName();
 		match('=');
 		expression();
 		emitLn('SUBQ #1,D0');
-		emitLn('LEA ' + name + '(PC),A0');
+		emitLn('LEA ' + value + '(PC),A0');
 		emitLn('MOVE D0,(A0)');
 		expression();
 		emitLn('MOVE D0,-(SP)');
 		postLabel(L1);
-		emitLn('LEA ' + name + '(PC),A0');
+		emitLn('LEA ' + value + '(PC),A0');
 		emitLn('MOVE (A0),D0');
 		emitLn('ADDQ #1,D0');
 		emitLn('MOVE D0,(A0)');
@@ -389,38 +444,33 @@
 	}
 
 	function assignment() {
-	   var name = getName();
-	   match('=');
-	   boolExpression();
-	   emitLn('LEA ' + name + '(PC),A0');
-	   emitLn('MOVE D0,(A0)');
+		var name=value;
+		match('=');
+		expression();
+		emitLn('LEA ' + name + '(PC),A0');
+		emitLn('MOVE D0,(A0)');
 	}
 
 	function fin() {
 		if (look==='\r') {getChar();}
 		if (look==='\n') {getChar();}
+		skipWhite();
 	}
 
-	function block(L) {
-		while (/[^elu]/.test(look)) {
-			fin();
-			switch (look) {
-				case 'i': doIf(L);    break;
-				case 'w': doWhile();  break;
-				case 'p': doLoop();   break;
-				case 'r': doRepeat(); break;
-				case 'f': doFor();    break;
-				case 'd': doDo();     break;
-				case 'b': doBreak(L); break;
+	function block() {
+		scan();
+		while (/[^el]/.test(token)) {
+			switch (token) {
+				case 'i': doIf(); break;
 				default: assignment();
 			}
-			fin();
+			scan();
 		}
 	}
 
 	function doProgram() {
 		block('');
-		if (look!=='e') {expected('End');}
+		matchString('END')
 		emitLn('END');
 	}
 
