@@ -20,6 +20,9 @@
 		,kwList=['IF','ELSE','ENDIF','END']
 		,kwCode='xilee'
 		,stdout=process.stdout
+		,klass=''
+		,sign=''
+		,typ=''
 	;
 
 	function getChar() {return look=string[++char_i]||'';}
@@ -43,7 +46,7 @@
 	function expected(s) {abort(s + ' expected');}
 
 	function match(x) {
-		if (look!==x) {expected('"'+x+'"');}
+		if (look!==x) {expected('''+x+''');}
 		getChar();
 		skipWhite();
 	}
@@ -85,8 +88,10 @@
 		while (isAlNum(look)) {
 			value+=look.toUpperCase();
 			getChar();
+			break;
 		}
 		skipWhite();
+		return value;
 	}
 
 	function getNum() {
@@ -133,6 +138,10 @@
 	function emit(s) {stdout.write('\t'+s);}
 
 	function emitLn(s) {emit(s+'\n');}
+
+	function writeLn(...s) {
+		stdout.write(s.join('')+'\n');
+	}
 
 	function ident() {
 		getName();
@@ -468,10 +477,132 @@
 		}
 	}
 
+	function doBlock(name) {
+		declarations();
+		postLabel(name);
+		statements();
+	}
+
+	function declarations() {
+		loop: while (true) {
+			switch (look) {
+				case 'l': labels(); break;
+				case 'c': constants(); break;
+				case 't': types(); break;
+				case 'v': variables(); break;
+				case 'p': doProcedure(); break;
+				case 'f': doFunction(); break;
+				default: break loop;
+			}
+		}
+	}
+
+	function labels() {
+		match('l');
+	}
+
+	function constants() {
+		match('c');
+	}
+
+	function types() {
+		match('t');
+	}
+
+	function variables() {
+		match('v');
+	}
+
+	function doProcedure() {
+		match('p');
+	}
+
+	function doFunction() {
+		match('f');
+	}
+
+	function statements() {
+		match('b');
+		while (look!='e') {
+			getChar();
+		}
+		match('e');
+	}
+
 	function doProgram() {
 		block('');
 		matchString('END')
 		emitLn('END');
+	}
+
+	function prog() {
+		match('p');
+		var name=getName();
+		prolog(name);
+		doBlock(name);
+		match('.');
+		epilog(name);
+	}
+
+	function prolog() {
+		writeLn('WARMST EQU $A01E');
+	}
+
+	function epilog(name) {
+		writeLn('DC WARMST');
+		writeLn('END '+name);
+	}
+
+	function getClass() {
+		if (/[axs]/.test(look)) {
+			klass=look;
+			getChar();
+		}
+		else {
+			klass='a';
+		}
+	}
+
+	function getType() {
+		typ=' ';
+		if (look==='u') {
+			sign='u';
+			typ='i';
+			getChar();
+		}
+		else {
+			sign='s';
+		}
+		if (/[ilc]/.test(look)) {
+			typ=look;
+			getChar();
+		}
+	}
+
+	function topDecl() {
+		var name=getName();
+		if (look==='(') {doFunc(name);}
+		else {doData(name);}
+	}
+
+	function doFunc(n) {
+		match('(');
+		match(')');
+		match('{');
+		match('}');
+		if (typ===' ') {typ='i';}
+		writeLn(klass, sign, typ, ' function ', n);
+	}
+
+	function doData(n) {
+		if (typ===' ') {expected('Type declaration');}
+		writeLn(klass, sign, typ, ' data ', n);
+		while (look===',') {
+			match(',');
+			n=getName();
+			writeLn(klass, sign, typ, ' data ', n);
+		}
+		match(';');
 	}
 
 	function init() {
@@ -480,5 +611,10 @@
 	}
 
 	init();
-	doProgram();
+	while (look!='') {
+		getClass();
+		getType();
+		topDecl();
+		while (look==='\n') {getChar();}
+	}
 }(console,process,require));
