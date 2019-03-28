@@ -17,12 +17,13 @@
 		,value=''
 		,lCount=0
 		,error_marker='[ERR]'
-		,kwList=['IF','ELSE','ENDIF','END']
-		,kwCode='xilee'
+		,kwList=['IF','ELSE','ENDIF','WHILE','ENDWHILE','READ','WRITE','VAR','BEGIN','END','PROGRAM']
+		,kwCode='xileweRWvbep'
 		,stdout=process.stdout
 		,klass=''
 		,sign=''
 		,typ=''
+		,inTable={}
 	;
 
 	function getChar() {return look=string[++char_i]||'';}
@@ -45,8 +46,11 @@
 
 	function expected(s) {abort(s + ' expected');}
 
+	function undefinedVar(n) {abort('Undefined Identifier '+n);}
+
 	function match(x) {
-		if (look!==x) {expected('''+x+''');}
+		newline();
+		if (look!==x) {expected('"'+x+'"');}
 		getChar();
 		skipWhite();
 	}
@@ -72,6 +76,12 @@
 		}
 	}
 
+	function newline() {
+		while (/[\r\n]/.test(look)) {
+			getChar();
+			skipWhite();
+		}
+	}
 
 	function skipComma() {
 		skipWhite();
@@ -82,27 +92,29 @@
 	}
 
 	function getName() {
+		newline();
 		value='';
-		while (/[\r\n]/.test(look)) {fin();}
 		if (!isAlpha(look)) {expected('Name');}
 		while (isAlNum(look)) {
 			value+=look.toUpperCase();
 			getChar();
-			break;
 		}
 		skipWhite();
-		return value;
 	}
 
 	function getNum() {
+		newline();
 		if (!isDigit(look)) {expected('Integer');}
 		value='';
 		while (isDigit(look)) {
 			value+=look;
 			getChar();
 		}
+		//Turn string into number, shouldn't actually change anything...
+		value=+value;
 		token='#';
 		skipWhite();
+		return value;
 	}
 
 	function getOp() {
@@ -139,8 +151,12 @@
 
 	function emitLn(s) {emit(s+'\n');}
 
+	function write(...s) {
+		stdout.write(s.join(''));
+	}
+
 	function writeLn(...s) {
-		stdout.write(s.join('')+'\n');
+		write(...s,'\n');
 	}
 
 	function ident() {
@@ -155,52 +171,47 @@
 		}
 	}
 
+	//This is different from Crenshaw's impl in that it eliminates the need for
+	//negFactor, firstFactor, firstTerm, and term1, making the code much less
+	//windy and confusing.
 	function factor() {
+		var neg=false;
+		while (/[+-]/.test(look)) {
+			if (look==='-') {neg=!neg;}
+			getChar();
+		}
 		if (look === '(') {
 			match('(');
-			expression();
+			boolExpression();
 			match(')');
+			if (neg) {negate();}
 		}
 		else if (isAlpha(look)) {
-			ident();
+			getName();
+			loadVar(value);
+			if (neg) {negate();}
 		}
 		else {
-			getNum();
-			emitLn('MOVE #' + value + ',D0');
-		}
-	}
-
-	function signedFactor() {
-		var neg=look==='-';
-		if (isAddop(look)) {
-			getChar();
-			skipWhite();
-		}
-		factor();
-		if (neg) {
-			emitLn('NEG D0');
+			loadConst((neg ? -1 : 1)*getNum());
 		}
 	}
 
 	function multiply() {
 		match('*');
 		factor();
-		emitLn('MULS (SP)+,D0');
+		popMul();
 	}
 
 	function divide() {
 		match('/');
 		factor();
-		emitLn('MOVE (SP)+,D1');
-		//Mr. Crenshaw did this wrong
-		//https://stackoverflow.com/questions/8882775/divide-divs-not-working-on-jack-crenshaws-lets-build-a-compiler
-		emitLn('EXG D0,D1');
-		emitLn('DIVS D1,D0');
+		popDiv();
 	}
 
-	function term1() {
+	function term() {
+		factor();
 		while (isMulop(look)) {
-			emitLn('MOVE D0,-(SP)');
+			push();
 			switch (look) {
 				case '*': multiply(); break;
 				case '/': divide(); break;
@@ -208,33 +219,22 @@
 		}
 	}
 
-	function term() {
-		factor();
-		term1();
-	}
-
-	function firstTerm() {
-		signedFactor();
-		term1();
-	}
-
 	function add() {
 		match('+');
 		term();
-		emitLn('ADD (SP)+,D0');
+		popAdd();
 	}
 
 	function subtract() {
 		match('-');
 		term();
-		emitLn('SUB (SP)+,D0');
-		emitLn('NEG D0');
+		popSub();
 	}
 
 	function expression() {
-		firstTerm();
+		term();
 		while (isAddop(look)) {
-			emitLn('MOVE D0,-(SP)');
+			push();
 			switch (look) {
 				case '+': add(); break;
 				case '-': subtract(); break;
@@ -249,21 +249,21 @@
 	function boolTerm() {
 		notFactor();
 		while (look === '&') {
-			emitLn('MOVE D0,-(SP)');
+			push();
 			match('&');
 			notFactor();
-			emitLn('AND (SP)+,D0');
+			popAnd();
 		}
 	}
 
 	function notFactor() {
 		if (look === '!') {
 			match('!');
-			boolFactor();
-			emitLn('EOR #-1,D0');
+			relation();
+			notIt();
 		}
 		else {
-			boolFactor();
+			relation();
 		}
 	}
 
@@ -285,19 +285,19 @@
 	function boolOr() {
 		match('|');
 		boolTerm();
-		emitLn('OR (SP)+,D0');
+		popOr();
 	}
 
 	function boolXor() {
 		match('~');
 		boolTerm();
-		emitLn('EOR (SP)+,D0');
+		popXor();
 	}
 
 	function boolExpression() {
 		boolTerm();
 		while (isOrop(look)) {
-			emitLn('MOVE D0,-(SP)');
+			push();
 			switch (look) {
 				case '|': boolOr(); break;
 				case '~': boolXor(); break;
@@ -305,16 +305,40 @@
 		}
 	}
 
+	function doRead() {
+		match('(');
+		getName();
+		readVar();
+		while (look===',') {
+			match(',');
+			getName();
+			readVar();
+		}
+		match(')');
+	}
+
+	function doWrite() {
+		match('(');
+		expression();
+		writeVar();
+		while (look===',') {
+			match(',');
+			expression();
+			writeVar();
+		}
+		match(')');
+	}
+
 	function doIf() {
 		var L1, L2;
-		condition();
+		boolExpression();
 		L1=newLabel();
 		L2=L1;
-		emitLn('BEQ ' + L1);
+		branchFalse(L1);
 		block();
 		if (token==='l') {
 			L2=newLabel();
-			emitLn('BRA ' + L2);
+			branch(L2);
 			postLabel(L1);
 			block();
 		}
@@ -324,15 +348,14 @@
 
 	function doWhile() {
 		var L1, L2;
-		match('w');
 		L1=newLabel();
 		L2=newLabel();
 		postLabel(L1);
 		boolExpression();
-		emitLn('BEQ ' + L2);
-		block(L2);
-		match('e');
-		emitLn('BRA ' + L1);
+		branchFalse(L2);
+		block();
+		matchString('ENDWHILE');
+		branch(L1);
 		postLabel(L2);
 	}
 
@@ -413,35 +436,56 @@
 	function equals() {
 		match('=');
 		expression();
-		emitLn('CMP (SP)+,D0');
-		emitLn('SEQ D0');
+		popCompare();
+		setEqual();
 	}
 
 	function notEquals() {
-		match('#');
+		match('>');
 		expression();
-		emitLn('CMP (SP)+,D0');
-		emitLn('SNE D0');
+		popCompare();
+		setNEqual();
 	}
 
 	function less() {
 		match('<');
-		expression();
-		emitLn('CMP (SP)+,D0');
-		emitLn('SGE D0');
+		switch (look) {
+			case '=': lessOrEqual(); break;
+			case '>': notEqual(); break;
+			default:
+				expression();
+				popCompare();
+				setLess();
+		}
 	}
 
 	function greater() {
 		match('>');
+		var orEqual=false;
+		if (look==='=') {match('='); orEqual=true;}
 		expression();
-		emitLn('CMP (SP)+,D0');
-		emitLn('SLE D0');
+		popCompare();
+		if (orEqual) {setGreaterOrEqual();} else {setGreater();}
+	}
+
+	function lessOrEqual() {
+		match('=');
+		expression();
+		popCompare();
+		setLess();
+	}
+
+	function greaterOrEqual() {
+		match('');
+		expression();
+		popCompare();
+		setGreater();
 	}
 
 	function relation() {
 		expression();
 		if (isRelop(look)) {
-			emitLn('MOVE D0,-(SP)');
+			push();
 			switch (look) {
 				case '=': equals();    break;
 				case '#': notEquals(); break;
@@ -449,15 +493,13 @@
 				case '>': greater();   break;
 			}
 		}
-		emitLn('TST D0');
 	}
 
 	function assignment() {
 		var name=value;
 		match('=');
-		expression();
-		emitLn('LEA ' + name + '(PC),A0');
-		emitLn('MOVE D0,(A0)');
+		boolExpression();
+		store(name);
 	}
 
 	function fin() {
@@ -471,6 +513,9 @@
 		while (/[^el]/.test(token)) {
 			switch (token) {
 				case 'i': doIf(); break;
+				case 'w': doWhile(); break;
+				case 'R': doRead(); break;
+				case 'W': doWrite(); break;
 				default: assignment();
 			}
 			scan();
@@ -536,21 +581,71 @@
 	}
 
 	function prog() {
-		match('p');
-		var name=getName();
-		prolog(name);
-		doBlock(name);
+		matchString('PROGRAM');
+		header();
+		topDecls();
+		main()
 		match('.');
-		epilog(name);
+	}
+
+	function header() {
+		writeLn('WARMST', '\t', 'EQU $A01E');
+		emitLn('LIB TINYLIB');
+	}
+
+	function topDecls() {
+		scan();
+		while (token!='b') {
+			switch (token) {
+				case 'v': decl(); break;
+				default: abort('Unrecognized Keyword "'+value+'"');
+			}
+			scan();
+		}
+	}
+
+	function decl() {
+		getName();
+		alloc(value);
+		while (look===',') {
+			match(',');
+			getName();
+			alloc(value);
+		}
+	}
+
+	function alloc(n) {
+		if (inTable.hasOwnProperty(n)) {abort('Duplicate Variable Name '+n);}
+		inTable[n]=true;
+		write(n, ':', '\t', 'DC ');
+		if (look==='=') {
+			match('=');
+			if (look==='-') {
+				write(look);
+				match('-');
+			}
+			writeLn(getNum());
+		}
+		else {
+			writeLn('0');
+		}
+	}
+
+	function main() {
+		matchString('BEGIN');
+		prolog();
+		block();
+		matchString('END');
+		epilog();
 	}
 
 	function prolog() {
-		writeLn('WARMST EQU $A01E');
+		postLabel('MAIN');
 	}
 
 	function epilog(name) {
-		writeLn('DC WARMST');
-		writeLn('END '+name);
+		emitLn('DC WARMST');
+		emitLn('END MAIN');
 	}
 
 	function getClass() {
@@ -608,13 +703,136 @@
 	function init() {
 		lCount=0;
 		getChar();
+		scan();
+	}
+
+	function clear() {
+		emitLn('CLR D0');
+	}
+
+	function negate() {
+		emitLn('NEG D0');
+	}
+
+	function loadConst(n) {
+		emit('MOVE #');
+		writeLn(n, ',D0');
+	}
+
+	function loadVar(name) {
+		if (!inTable.hasOwnProperty(name)) {undefinedVar(name);}
+		emitLn('MOVE '+name+'(PC),D0');
+	}
+
+	function push() {
+		emitLn('MOVE D0,-(SP)');
+	}
+
+	function popAdd() {
+		emitLn('ADD (SP)+,D0');
+	}
+
+	function popSub() {
+		emitLn('SUB (SP)+,D0');
+		emitLn('NEG D0');
+	}
+
+	function popMul() {
+		emitLn('MULS (SP)+,D0');
+	}
+
+	function popDiv() {
+		emitLn('MOVE (SP)+,D7');
+		emitLn('EXT.L D7');
+		emitLn('DIVS D0,D7');
+		emitLn('MOVE D7,D0');
+		return;
+
+		//Code above is from part 10
+		//Code below is a fixed version of code from an earlier part of the tutorial
+		//being kept out of curiosity.
+		emitLn('MOVE (SP)+,D1');
+		//Mr. Crenshaw did this wrong
+		//https://stackoverflow.com/questions/8882775/divide-divs-not-working-on-jack-crenshaws-lets-build-a-compiler
+		emitLn('EXG D0,D1');
+		emitLn('DIVS D1,D0');
+	}
+
+	function notIt() {
+		emitLn('NOT D0');
+	}
+
+	function popAnd() {
+		emitLn('AND (SP)+,D0');
+	}
+
+	function popOr() {
+		emitLn('OR (SP)+,D0');
+	}
+
+	function popXor() {
+		emitLn('EOR (SP)+,D0');
+	}
+
+	function popCompare() {
+		emitLn('CMP (SP)+,D0');
+	}
+
+	function setEqual() {
+		emitLn('SEQ D0');
+		emitLn('EXT D0');
+	}
+
+	function setNEqual() {
+		emitLn('SNE D0');
+		emitLn('EXT D0');
+	}
+
+	function setGreater() {
+		emitLn('SLT D0');
+		emitLn('EXT D0');
+	}
+
+	function setLess() {
+		emitLn('SGT D0');
+		emitLn('EXT D0');
+	}
+
+	function setGreaterOrEqual() {
+		emitLn('SLE D0');
+		emitLn('EXT D0');
+	}
+
+	function setLessOrEqual() {
+		emitLn('SGE D0');
+		emitLn('EXT D0');
+	}
+
+	function store(name) {
+		if (!inTable.hasOwnProperty(name)) {undefinedVar(name);}
+		emitLn('LEA '+name+'(PC),A0');
+		emitLn('MOVE D0,(A0)');
+	}
+
+	function readVar() {
+		emitLn('BSR READ');
+		store(value);
+	}
+
+	function writeVar() {
+		emitLn('BSR WRITE');
+	}
+
+	function branch(l) {
+		emitLn('BRA '+l);
+	}
+
+	function branchFalse(l) {
+		emitLn('TST D0');
+		emitLn('BEQ '+l);
 	}
 
 	init();
-	while (look!='') {
-		getClass();
-		getType();
-		topDecl();
-		while (look==='\n') {getChar();}
-	}
+	prog();
+	if (look!=='\n') {abort('Unexpected data after "."');}
 }(console,process,require));
