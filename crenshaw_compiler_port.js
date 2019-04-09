@@ -28,9 +28,14 @@
 
 	function getChar() {return look=string[++char_i]||'';}
 
+	function parserDump() {
+		return 'Parser dump: '+JSON.stringify({look,value,token});
+	}
+
 	function error(s) {
 		throw new Error(
 			'error: '+s+'\n'
+			+parserDump()+'\n'
 			+'"'
 			+string
 				.splice(char_i,0,error_marker)
@@ -44,9 +49,17 @@
 		process.exit(-1);
 	}
 
-	function expected(s) {abort(s + ' expected');}
+	function expected(s) {abort(s + ' expected.');}
 
 	function undefinedVar(n) {abort('Undefined Identifier '+n);}
+
+	function duplicate(n) {
+		abort('Duplicate Variable Name '+n);
+	}
+
+	function checkIdent() {
+		if (token!='x') {expected('Identifier');}
+	}
 
 	function match(x) {
 		newline();
@@ -57,6 +70,7 @@
 
 	function matchString(x) {
 		if (value!==x) {expected('"'+x+'"');}
+		next();
 	}
 
 	function isAlpha(c) {return /[a-z]/i.test(c);}
@@ -68,7 +82,7 @@
 	function isMulop(c) {return /[\*\/]/.test(c);}
 	function isOrop(c) {return /[|~]/.test(c);}
 	function isRelop(c) {return /[=#<>]/.test(c);}
-	function isWhite(c) {return /[ \t]/.test(c);}
+	function isWhite(c) {return /[ \t\r\n]/.test(c);}
 
 	function skipWhite() {
 		while (isWhite(look)) {
@@ -92,40 +106,35 @@
 	}
 
 	function getName() {
-		newline();
+		skipWhite();
+		token='x';
 		value='';
-		if (!isAlpha(look)) {expected('Name');}
-		while (isAlNum(look)) {
+		if (!isAlpha(look)) {expected('Identifier');}
+		do {
 			value+=look.toUpperCase();
 			getChar();
-		}
-		skipWhite();
+		} while (isAlNum(look));
 	}
 
 	function getNum() {
-		newline();
+		skipWhite();
 		if (!isDigit(look)) {expected('Integer');}
 		value='';
-		while (isDigit(look)) {
+		do {
 			value+=look;
 			getChar();
-		}
+		} while (isDigit(look));
 		//Turn string into number, shouldn't actually change anything...
 		value=+value;
 		token='#';
-		skipWhite();
 		return value;
 	}
 
 	function getOp() {
-		if (!isOp(look)) {expected('Operator');}
-		value='';
-		while (isOp(look)) {
-			value+=look;
-			getChar();
-		}
-		token=(value.length===1 ? value : '?');
 		skipWhite();
+		token=look;
+		value=look;
+		getChar();
 	}
 
 	function getBoolean() {
@@ -134,9 +143,17 @@
 		getChar();
 	}
 
+	function next() {
+		skipWhite();
+		if (isAlpha(look)) {getName();}
+		else if (isDigit(look)) {getNum();}
+		else {getOp();}
+		//writeLn(parserDump());
+		return true; //instead of while (cond&&(next()||true)) just while (cond&&next())
+	}
+
 	function scan() {
-		getName();
-		token=kwCode[lookup(value)+1];
+		if (token==='x') {token=kwCode[lookup(value)+1];}
 	}
 
 	function lookup(s) {
@@ -145,9 +162,9 @@
 
 	function newLabel() {return 'L'+(++lCount);}
 
-	function postLabel(L) {stdout.write(L+':');}
+	function postLabel(L) {write(L+':');}
 
-	function emit(s) {stdout.write('\t'+s);}
+	function emit(s) {write('\t'+s);}
 
 	function emitLn(s) {emit(s+'\n');}
 
@@ -176,43 +193,46 @@
 	//windy and confusing.
 	function factor() {
 		var neg=false;
-		while (/[+-]/.test(look)) {
-			if (look==='-') {neg=!neg;}
-			getChar();
+		while (/[+-]/.test(token)) {
+			if (token==='-') {neg=!neg;}
+			next();
 		}
-		if (look === '(') {
-			match('(');
+		if (token === '(') {
+			next();
 			boolExpression();
-			match(')');
-			if (neg) {negate();}
-		}
-		else if (isAlpha(look)) {
-			getName();
-			loadVar(value);
+			matchString(')');
 			if (neg) {negate();}
 		}
 		else {
-			loadConst((neg ? -1 : 1)*getNum());
+			if (token==='x') {
+				loadVar(value);
+				if (neg) {negate();}
+			}
+			else if (token==='#') {
+				loadConst((neg ? -1 : 1)*value);
+			}
+			else {expected('Math factor');}
+			next();
 		}
 	}
 
 	function multiply() {
-		match('*');
+		next();
 		factor();
 		popMul();
 	}
 
 	function divide() {
-		match('/');
+		next();
 		factor();
 		popDiv();
 	}
 
 	function term() {
 		factor();
-		while (isMulop(look)) {
+		while (isMulop(token)) {
 			push();
-			switch (look) {
+			switch (token) {
 				case '*': multiply(); break;
 				case '/': divide(); break;
 			}
@@ -220,26 +240,36 @@
 	}
 
 	function add() {
-		match('+');
+		next();
 		term();
 		popAdd();
 	}
 
 	function subtract() {
-		match('-');
+		next();
 		term();
 		popSub();
 	}
 
 	function expression() {
-		term();
-		while (isAddop(look)) {
+		if (isAddop(token)) {clear();} else {term();}
+		while (isAddop(token)) {
 			push();
-			switch (look) {
+			switch (token) {
 				case '+': add(); break;
 				case '-': subtract(); break;
 			}
 		}
+	}
+
+	function compareExpression() {
+		expression();
+		popCompare();
+	}
+
+	function nextExpression() {
+		next();
+		compareExpression();
 	}
 
 	function condition() {
@@ -248,17 +278,17 @@
 
 	function boolTerm() {
 		notFactor();
-		while (look === '&') {
+		while (token === '&') {
 			push();
-			match('&');
+			next();
 			notFactor();
 			popAnd();
 		}
 	}
 
 	function notFactor() {
-		if (look === '!') {
-			match('!');
+		if (token === '!') {
+			next();
 			relation();
 			notIt();
 		}
@@ -283,22 +313,22 @@
 	}
 
 	function boolOr() {
-		match('|');
+		next();
 		boolTerm();
 		popOr();
 	}
 
 	function boolXor() {
-		match('~');
+		next();
 		boolTerm();
 		popXor();
 	}
 
 	function boolExpression() {
 		boolTerm();
-		while (isOrop(look)) {
+		while (isOrop(token)) {
 			push();
-			switch (look) {
+			switch (token) {
 				case '|': boolOr(); break;
 				case '~': boolXor(); break;
 			}
@@ -306,37 +336,39 @@
 	}
 
 	function doRead() {
-		match('(');
-		getName();
+		next();
+		matchString('(');
 		readVar();
-		while (look===',') {
-			match(',');
-			getName();
+		while (token===',') {
+			next();
 			readVar();
 		}
-		match(')');
+		matchString(')');
 	}
 
 	function doWrite() {
-		match('(');
+		next();
+		matchString('(');
 		expression();
-		writeVar();
-		while (look===',') {
-			match(',');
+		writeIt();
+		while (token===',') {
+			next();
 			expression();
-			writeVar();
+			writeIt();
 		}
-		match(')');
+		matchString(')');
 	}
 
 	function doIf() {
 		var L1, L2;
+		next();
 		boolExpression();
 		L1=newLabel();
 		L2=L1;
 		branchFalse(L1);
 		block();
 		if (token==='l') {
+			next();
 			L2=newLabel();
 			branch(L2);
 			postLabel(L1);
@@ -347,6 +379,7 @@
 	}
 
 	function doWhile() {
+		next();
 		var L1, L2;
 		L1=newLabel();
 		L2=newLabel();
@@ -434,37 +467,31 @@
 	}
 
 	function equals() {
-		match('=');
-		expression();
-		popCompare();
+		nextExpression();
 		setEqual();
 	}
 
 	function notEquals() {
-		match('>');
-		expression();
-		popCompare();
+		nextExpression();
 		setNEqual();
 	}
 
 	function less() {
-		match('<');
-		switch (look) {
+		next();
+		switch (token) {
 			case '=': lessOrEqual(); break;
 			case '>': notEqual(); break;
 			default:
-				expression();
-				popCompare();
+				compareExpression();
 				setLess();
 		}
 	}
 
 	function greater() {
-		match('>');
+		next();
 		var orEqual=false;
-		if (look==='=') {match('='); orEqual=true;}
-		expression();
-		popCompare();
+		if (token==='=') {next();orEqual=true;}
+		compareExpression();
 		if (orEqual) {setGreaterOrEqual();} else {setGreater();}
 	}
 
@@ -484,20 +511,22 @@
 
 	function relation() {
 		expression();
-		if (isRelop(look)) {
+		if (isRelop(token)) {
 			push();
-			switch (look) {
+			switch (token) {
 				case '=': equals();    break;
-				case '#': notEquals(); break;
 				case '<': less();      break;
 				case '>': greater();   break;
+				default: writeLn('Should this happen?');
 			}
 		}
 	}
 
 	function assignment() {
 		var name=value;
-		match('=');
+		checkTable(name);
+		next();
+		matchString('=');
 		boolExpression();
 		store(name);
 	}
@@ -590,17 +619,12 @@
 
 	function header() {
 		writeLn('WARMST', '\t', 'EQU $A01E');
-		emitLn('LIB TINYLIB');
 	}
 
 	function topDecls() {
 		scan();
-		while (token!='b') {
-			switch (token) {
-				case 'v': decl(); break;
-				default: abort('Unrecognized Keyword "'+value+'"');
-			}
-			scan();
+		while (token==='v') {
+			do {alloc();} while (token===',');
 		}
 	}
 
@@ -614,21 +638,36 @@
 		}
 	}
 
+	function checkTable(n) {
+		if (!inTable.hasOwnProperty(n)) {undefinedVar(n);}
+	}
+
+	function checkDup(n) {
+		if (inTable.hasOwnProperty(n)) {duplicate(n);}
+	}
+
 	function alloc(n) {
-		if (inTable.hasOwnProperty(n)) {abort('Duplicate Variable Name '+n);}
-		inTable[n]=true;
-		write(n, ':', '\t', 'DC ');
+		next();
+		if (token!=='x') {expected('Variable Name');}
+		var name=value;
+		checkDup(name);
+		inTable[name]=true;
+		var val=0;
 		if (look==='=') {
-			match('=');
+			next();
+			var isNeg=false;
 			if (look==='-') {
-				write(look);
-				match('-');
+				isNeg=true;
+				next();
 			}
-			writeLn(getNum());
+			val=getNum()*(isNeg ? -1 : 1);
 		}
-		else {
-			writeLn('0');
-		}
+		allocate(name,val);
+		next();
+	}
+
+	function allocate(name, val) {
+		writeLn(name, ':\tDC ', val);
 	}
 
 	function main() {
@@ -701,9 +740,8 @@
 	}
 
 	function init() {
-		lCount=0;
 		getChar();
-		scan();
+		next();
 	}
 
 	function clear() {
@@ -720,7 +758,7 @@
 	}
 
 	function loadVar(name) {
-		if (!inTable.hasOwnProperty(name)) {undefinedVar(name);}
+		checkTable(name)
 		emitLn('MOVE '+name+'(PC),D0');
 	}
 
@@ -809,17 +847,43 @@
 	}
 
 	function store(name) {
-		if (!inTable.hasOwnProperty(name)) {undefinedVar(name);}
+		checkTable(name);
 		emitLn('LEA '+name+'(PC),A0');
 		emitLn('MOVE D0,(A0)');
 	}
 
 	function readVar() {
-		emitLn('BSR READ');
-		store(value);
+		checkIdent()
+		checkTable(value);
+		readIt(value)
+		next();
 	}
 
-	function writeVar() {
+	function doRead() {
+		next();
+		matchString('(');
+		do {
+			readVar();
+		} while (token===','&&next());
+		matchString(')');
+	}
+
+	function doWrite() {
+		next();
+		matchString('(');
+		do {
+			expression();
+			writeIt();
+		} while (token===','&&next());
+		matchString(')');
+	}
+
+	function readIt(name) {
+		emitLn('BSR READ');
+		store(name);
+	}
+
+	function writeIt() {
 		emitLn('BSR WRITE');
 	}
 
@@ -833,6 +897,12 @@
 	}
 
 	init();
-	prog();
-	if (look!=='\n') {abort('Unexpected data after "."');}
+	matchString('PROGRAM');
+	header();
+	topDecls();
+	matchString('BEGIN');
+	prolog();
+	block();
+	matchString('END');
+	epilog();
 }(console,process,require));

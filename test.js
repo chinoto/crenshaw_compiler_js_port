@@ -6,5 +6,6 @@ PROGRAM
 			result=num*result
 			num=num-1
 		endwhile
+		write(result)
 	END
 .
