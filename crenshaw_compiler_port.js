@@ -26,7 +26,28 @@
 		,inTable={}
 	;
 
-	function getChar() {return look=string[++char_i]||'';}
+	function getChar() {
+		++char_i;
+		//Handle potential comment
+		if (string[char_i]==='/') {
+			//single line comment
+			if      (string[char_i+1]==='/') {
+				char_i+=2;
+				//Avoid infinite loop by checking against string.length first
+				while (string.length>char_i&&/[^\r\n]/.test(string[char_i])) {++char_i;}
+			}
+			//multiline comment
+			else if (string[char_i+1]==='*') {
+				//advance three characters so, by the end, char_i will be at the last
+				//character ('/') of the comment, then set look to be a space so
+				//comments don't join statements together
+				char_i+=3;
+				while (string.length>char_i&&(string[char_i-1]!=='*'||string[char_i]!=='/')) {++char_i;}
+				return look=' ';
+			}
+		}
+		return look=string[char_i]||'';
+	}
 
 	function parserDump() {
 		return 'Parser dump: '+JSON.stringify({look,value,token});
@@ -71,6 +92,10 @@
 	function matchString(x) {
 		if (value!==x) {expected('"'+x+'"');}
 		next();
+	}
+
+	function semi() {
+		if (token===';') {next();}
 	}
 
 	function isAlpha(c) {return /[a-z]/i.test(c);}
@@ -547,6 +572,7 @@
 				case 'W': doWrite(); break;
 				default: assignment();
 			}
+			semi();
 			scan();
 		}
 	}
@@ -625,6 +651,7 @@
 		scan();
 		while (token==='v') {
 			do {alloc();} while (token===',');
+			semi();
 		}
 	}
 
