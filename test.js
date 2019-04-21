@@ -1,5 +1,6 @@
 PROGRAM //Why do I need this?
 	var num,result=1
+	var test
 	BEGIN
 		/*
 		This program reads a number into num and

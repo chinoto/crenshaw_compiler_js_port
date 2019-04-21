@@ -132,13 +132,13 @@
 
 	function getName() {
 		skipWhite();
-		token='x';
 		value='';
 		if (!isAlpha(look)) {expected('Identifier');}
 		do {
 			value+=look.toUpperCase();
 			getChar();
 		} while (isAlNum(look));
+		token=kwCode[lookup(value)+1];
 	}
 
 	function getNum() {
@@ -175,10 +175,6 @@
 		else {getOp();}
 		//writeLn(parserDump());
 		return true; //instead of while (cond&&(next()||true)) just while (cond&&next())
-	}
-
-	function scan() {
-		if (token==='x') {token=kwCode[lookup(value)+1];}
 	}
 
 	function lookup(s) {
@@ -563,7 +559,6 @@
 	}
 
 	function block() {
-		scan();
 		while (/[^el]/.test(token)) {
 			switch (token) {
 				case 'i': doIf(); break;
@@ -573,7 +568,6 @@
 				default: assignment();
 			}
 			semi();
-			scan();
 		}
 	}
 
@@ -648,8 +642,7 @@
 	}
 
 	function topDecls() {
-		scan();
-		while (token==='v') {
+		while (token==='v'||token==='P') {
 			do {alloc();} while (token===',');
 			semi();
 		}
