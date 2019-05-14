@@ -17,13 +17,16 @@
 		,value=''
 		,lCount=0
 		,error_marker='[ERR]'
-		,kwList=['IF','ELSE','ENDIF','WHILE','ENDWHILE','READ','WRITE','VAR','BEGIN','END','PROGRAM']
-		,kwCode='xileweRWvbep'
+		,kwList=['IF','ELSE','ENDIF','WHILE','ENDWHILE','READ','WRITE','VAR','BEGIN','END','PROGRAM','PROCEDURE']
+		,kwCode='xileweRWvbepP'
 		,stdout=process.stdout
 		,klass=''
 		,sign=''
 		,typ=''
 		,inTable={}
+		,params={}
+		,numParams=0
+		,base=0
 	;
 
 	function getChar() {
@@ -139,6 +142,7 @@
 			getChar();
 		} while (isAlNum(look));
 		token=kwCode[lookup(value)+1];
+		return value;
 	}
 
 	function getNum() {
@@ -226,7 +230,8 @@
 		}
 		else {
 			if (token==='x') {
-				loadVar(value);
+				if (isParam(value)) {loadParam(params[value]);}
+				else {loadVar(value);}
 				if (neg) {negate();}
 			}
 			else if (token==='#') {
@@ -356,28 +361,78 @@
 		}
 	}
 
-	function doRead() {
+	function doProc() {
+		let name=getName();
 		next();
-		matchString('(');
-		readVar();
-		while (token===',') {
-			next();
-			readVar();
-		}
-		matchString(')');
+		checkDup(name);
+		inTable[name]='p';
+		formalList();
+		var k=locDecls();
+		procProlog(name,k)
+		matchString('BEGIN');
+		block();
+		matchString('END');
+		procEpilog();
+		clearParams();
 	}
 
-	function doWrite() {
-		next();
+	function formalList() {
 		matchString('(');
-		expression();
-		writeIt();
-		while (token===',') {
-			next();
-			expression();
-			writeIt();
+		if (token!==')') {
+			do {
+				checkIdent();
+				addParam(value);
+				next();
+			} while (token===','&&next());
 		}
 		matchString(')');
+		base=numParams;
+		numParams+=4
+	}
+
+	function addParam(name) {
+		if (isParam(name)) {duplicate(name);}
+		++numParams;
+		params[name]=numParams;
+	}
+
+	function isParam(name) {
+		return params.hasOwnProperty(name);
+	}
+
+	function clearParams() {
+		params={};
+		numParams=0;
+	}
+
+	function locDecls() {
+		var n=0;
+		while (token==='v') {
+			do {
+				addParam(getName());
+				++n;
+				next();
+			} while (token===',');
+		}
+		return n;
+	}
+
+	function procProlog(name,k) {
+		postLabel(name);
+		emitLn('LINK A6,#'+(-2*k));
+	}
+
+	function procEpilog(name) {
+		emitLn('UNLK A6');
+		emitLn('RTS');
+	}
+
+	function loadParam(n) {
+		emitLn(`MOVE ${8+2*(base-n)}(A6),D0`);
+	}
+
+	function storeParam(n) {
+		emitLn(`MOVE D0,${8+2*(base-n)}(A6)`);
 	}
 
 	function doIf() {
@@ -543,13 +598,49 @@
 		}
 	}
 
-	function assignment() {
+	function assignOrProc() {
 		var name=value;
-		checkTable(name);
+		switch (isParam(name) ? 'f' : inTable[name]) {
+			case 'v':
+			case 'f': assignment(name); break;
+			case 'p': callProc(name); break;
+			default: undefinedVar(name);
+		}
+	}
+
+	function assignment(name) {
 		next();
 		matchString('=');
 		boolExpression();
-		store(name);
+		if (isParam(name)) {storeParam(params[name]);}
+		else {store(name);}
+	}
+
+	function callProc(name) {
+		next();
+		var n=paramList();
+		emitLn('BSR '+name);
+		if (n>0) {
+			emitLn(`ADD #${n},SP`);
+		}
+	}
+
+	function paramList() {
+		var n=0;
+		matchString('(');
+		if (token!==')') {
+			do {
+				param();
+				++n;
+			} while (token===','&&next());
+		}
+		matchString(')');
+		return 2*n;
+	}
+
+	function param() {
+		boolExpression();
+		push();
 	}
 
 	function fin() {
@@ -565,7 +656,8 @@
 				case 'w': doWhile(); break;
 				case 'R': doRead(); break;
 				case 'W': doWrite(); break;
-				default: assignment();
+				case 'P': doProc(); break;
+				default: assignOrProc();
 			}
 			semi();
 		}
@@ -642,8 +734,12 @@
 	}
 
 	function topDecls() {
-		while (token==='v'||token==='P') {
-			do {alloc();} while (token===',');
+		while (true) { //v or P
+			if (token==='v') {
+				do {alloc();} while (token===',');
+			}
+			else if (token==='P') {doProc();}
+			else {break;}
 			semi();
 		}
 	}
@@ -671,7 +767,7 @@
 		if (token!=='x') {expected('Variable Name');}
 		var name=value;
 		checkDup(name);
-		inTable[name]=true;
+		inTable[name]='v';
 		var val=0;
 		if (look==='=') {
 			next();
@@ -764,6 +860,7 @@
 		next();
 	}
 
+	//Assembly implementations
 	function clear() {
 		emitLn('CLR D0');
 	}
@@ -916,10 +1013,14 @@
 		emitLn('BEQ '+l);
 	}
 
+	function procReturn() {
+		emitLn('RTS');
+	}
+
 	init();
-	matchString('PROGRAM');
 	header();
 	topDecls();
+	matchString('PROGRAM');
 	matchString('BEGIN');
 	prolog();
 	block();

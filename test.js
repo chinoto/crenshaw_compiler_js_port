@@ -1,18 +1,17 @@
-PROGRAM //Why do I need this?
-	var num,result=1
-	var test
-	BEGIN
-		/*
-		This program reads a number into num and
-		computes the factorial of it by multiplying
-		result by num and subtracting 1 from num
-		while num is 1, then writing result out.
-		*/
-		read(num)
-		while num>1
-			result=num*result
-			num=num-1
-		endwhile
-		write(result)
-	END
-. //Or this?
+var num,result
+
+PROCEDURE factorial(num)
+var a,b //Just for testing
+BEGIN
+	a=1
+	b=2
+	result=result*num
+	if num>1 factorial(num-1) endif
+END
+
+PROGRAM BEGIN
+	read(num)
+	result=1
+	factorial(num)
+	write(result)
+END
