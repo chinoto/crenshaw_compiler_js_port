@@ -33,6 +33,11 @@ I appreciate that this tutorial exists, but I feel like Crenshaw occasionally ta
 
 Atom eats trailing spaces on save, so instead of tweaking settings to keep my line breaks (space and newline in Markdown), I just settled for a gap (two newlines) between paragraphs/sentences in this README, which is probably better anyway. I have a thing for compactness...
 
+### Progress update (2019-05-19)
+"Part 13: Procedures" instructed to start over with single character tokens and a minimal cradle for supposed simplicity, which I decided against and tried grafting the changes onto the existing compiler instead. When moving on to local variables, I missed the part that said to go back to having the procedure parameters be pass-by-value, so I struggled for awhile to understand why the output didn't make sense (treating local variables as addresses). Once I had realized what I had missed, fixing it was easy and I had procedures correctly implemented along with the features accrued from past parts of the tutorial.
+
+In the last update, I thought it would be a good idea to keep dead functions in case they were used later, but the few hundred extra lines of code and similarly named functions were causing some mental overhead, so they're gone thanks to the help of ESLint. If any of it really is helpful, I can get them back via version control.
+
 ## Extraneous Stuff
 Markdown assistance provided by [Dillinger]
 
