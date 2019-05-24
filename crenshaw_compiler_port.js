@@ -12,8 +12,8 @@
 		,value=''
 		,lCount=0
 		,error_marker='[ERR]'
-		,kwList=['IF','ELSE','ENDIF','WHILE','ENDWHILE','READ','WRITE','VAR','BEGIN','END','PROGRAM','PROCEDURE']
-		,kwCode='xileweRWvbepP'
+		,kwList=['IF','ELSE','ENDIF','WHILE','ENDWHILE','READ','WRITE','BYTE','WORD','LONG','BEGIN','END','PROGRAM','PROCEDURE']
+		,kwCode='xiLereRWbwlBepP'
 		,stdout=process.stdout
 		,inTable={}
 		,params={}
@@ -96,6 +96,7 @@
 	function isOrop(c) {return /[|~]/.test(c);}
 	function isRelop(c) {return /[=#<>]/.test(c);}
 	function isWhite(c) {return /[ \t\r\n]/.test(c);}
+	function isVarType(c) {return /[bwl]/.test(c);}
 
 	function skipWhite() {
 		while (isWhite(look)) {
@@ -170,74 +171,74 @@
 	//windy and confusing.
 	function factor() {
 		var neg=false;
+		let type;
 		while (/[+-]/.test(token)) {
 			if (token==='-') {neg=!neg;}
 			next();
 		}
 		if (token === '(') {
 			next();
-			boolExpression();
+			type=boolExpression();
 			matchString(')');
 			if (neg) {negate();}
 		}
 		else {
 			if (token==='x') {
-				if (isParam(value)) {loadParam(params[value]);}
-				else {loadVar(value);}
+				if (isParam(value)) {type=loadParam(params[value]);}
+				else {type=loadVar(value);}
 				if (neg) {negate();}
 			}
 			else if (token==='#') {
-				loadConst((neg ? -1 : 1)*value);
+				type=loadConst((neg ? -1 : 1)*value);
 			}
 			else {expected('Math factor');}
 			next();
 		}
+		return type;
 	}
 
-	function multiply() {
+	function multiply(t1) {
 		next();
-		factor();
-		popMul();
+		return popMul(t1,factor());
 	}
 
-	function divide() {
+	function divide(t1) {
 		next();
-		factor();
-		popDiv();
+		return popDiv(t1,factor());
 	}
 
 	function term() {
-		factor();
+		let type=factor();
 		while (isMulop(token)) {
-			push();
+			push(type);
 			switch (token) {
-				case '*': multiply(); break;
-				case '/': divide(); break;
+				case '*': type=multiply(type); break;
+				case '/': type=divide(type); break;
 			}
 		}
+		return type;
 	}
 
-	function add() {
+	function add(t1) {
 		next();
-		term();
-		popAdd();
+		return popAdd(t1,term());
 	}
 
-	function subtract() {
+	function subtract(t1) {
 		next();
-		term();
-		popSub();
+		return popSub(t1,term());
 	}
 
 	function expression() {
-		term();
+		let type=term();
 		while (isAddop(token)) {
-			push();
+			push(type);
 			switch (token) {
-				case '+': add(); break;
-				case '-': subtract(); break;
+				case '+': type=add(type); break;
+				case '-': type=subtract(type); break;
 			}
 		}
+		return type;
 	}
 
 	function compareExpression() {
@@ -251,24 +252,27 @@
 	}
 
 	function boolTerm() {
-		notFactor();
+		let type=notFactor();
 		while (token === '&') {
 			push();
 			next();
 			notFactor();
 			popAnd();
 		}
+		return type;
 	}
 
 	function notFactor() {
+		let type;
 		if (token === '!') {
 			next();
-			relation();
+			type=relation();
 			notIt();
 		}
 		else {
-			relation();
+			type=relation();
 		}
+		return type;
 	}
 
 	function boolOr() {
@@ -283,15 +287,28 @@
 		popXor();
 	}
 
+	/*
+	This is an incomplete listing of functions called by boolExpression and its
+	descendants to make the flow easier to follow.
+
+	boolExpression: boolTerm boolOr boolXor
+	boolTerm: notFactor popAnd
+	notFactor: relation notIt
+	relation: expression equals less greater
+	expression: term add subtract
+	term: factor multiply divide
+	factor: boolExpression loadVar loadParam loadConst
+	*/
 	function boolExpression() {
-		boolTerm();
+		let type=boolTerm();
 		while (isOrop(token)) {
-			push();
+			push(type);
 			switch (token) {
-				case '|': boolOr(); break;
-				case '~': boolXor(); break;
+				case '|': type=boolOr(type); break;
+				case '~': type=boolXor(type); break;
 			}
 		}
+		return type;
 	}
 
 	function doProc() {
@@ -376,7 +393,7 @@
 		L2=L1;
 		branchFalse(L1);
 		block();
-		if (token==='l') {
+		if (token==='L') {
 			next();
 			L2=newLabel();
 			branch(L2);
@@ -436,7 +453,7 @@
 	}
 
 	function relation() {
-		expression();
+		let type=expression();
 		if (isRelop(token)) {
 			push();
 			switch (token) {
@@ -446,12 +463,15 @@
 				default: writeLn('Should this happen?');
 			}
 		}
+		return type;
 	}
 
 	function assignOrProc() {
 		var name=value;
 		switch (isParam(name) ? 'f' : inTable[name]) {
-			case 'v':
+			case 'b':
+			case 'w':
+			case 'l':
 			case 'f': assignment(name); break;
 			case 'p': callProc(name); break;
 			default: undefinedVar(name);
@@ -497,7 +517,7 @@
 		while (/[^el]/.test(token)) {
 			switch (token) {
 				case 'i': doIf(); break;
-				case 'w': doWhile(); break;
+				case 'r': doWhile(); break;
 				case 'R': doRead(); break;
 				case 'W': doWrite(); break;
 				case 'P': doProc(); break;
@@ -513,8 +533,9 @@
 
 	function topDecls() {
 		while (true) { //v or P
-			if (token==='v') {
-				do {alloc();} while (token===',');
+			if (isVarType(token)) {
+				let type=token;
+				do {alloc(type);} while (token===',');
 			}
 			else if (token==='P') {doProc();}
 			else {break;}
@@ -522,20 +543,22 @@
 		}
 	}
 
-	function checkTable(n) {
+	function varType(n) {
 		if (!inTable.hasOwnProperty(n)) {undefinedVar(n);}
+		if (!isVarType(inTable[n])) {abort(`Identifier '${n}' is recorded as a ${inTable[n]}, not a variable`);}
+		return inTable[n];
 	}
 
 	function checkDup(n) {
 		if (inTable.hasOwnProperty(n)) {duplicate(n);}
 	}
 
-	function alloc() {
+	function alloc(type) {
 		next();
 		if (token!=='x') {expected('Variable Name');}
 		var name=value;
 		checkDup(name);
-		inTable[name]='v';
+		inTable[name]=type;
 		var val=0;
 		if (look==='=') {
 			next();
@@ -546,12 +569,12 @@
 			}
 			val=getNum()*(isNeg ? -1 : 1);
 		}
-		allocate(name,val);
+		allocate(name,val,type);
 		next();
 	}
 
-	function allocate(name, val) {
-		writeLn(name, ':\tDC ', val);
+	function allocate(name, val, type) {
+		writeLn(`${name}:\tDC.${type} ${val}`);
 	}
 
 	function prolog() {
@@ -573,42 +596,98 @@
 		emitLn('CLR D0');
 	}
 
+	function move(type, src, dest) {
+		emitLn(`MOVE.${type} ${src},${dest}`);
+	}
+
+	function convert(src, dest, reg) {
+		if (src!==dest) {
+			if (src==='b') {emitLn('AND.W #$FF,'+reg);}
+			if (dest==='l') {emitLn('EXT.L '+reg);}
+		}
+	}
+
+	function promote(t1, t2, reg) {
+		let type=t1;
+		if (t1!==t2&&(t1==='b'||(t1==='w'&&t2==='l'))) {
+			convert(t1,t2,reg);
+			type=t2;
+		}
+		return type;
+	}
+
+	function sameType(t1,t2) {
+		t1=promote(t1,t2,'D7');
+		return promote(t2,t1,'D0');
+	}
+
 	function negate() {
 		emitLn('NEG D0');
 	}
 
 	function loadConst(n) {
-		emit('MOVE #');
-		writeLn(n, ',D0');
+		let absN=Math.abs(n);
+		let type;
+		if (absN<=127) {type='b'}
+		else if (absN<=32767) {type='w'}
+		else {type='l'}
+		move(type,'#'+n,'D0');
+		return type;
 	}
 
 	function loadVar(name) {
-		checkTable(name)
-		emitLn('MOVE '+name+'(PC),D0');
+		let type=varType(name);
+		move(type, name+'(PC)', 'D0');
+		return type;
 	}
 
-	function push() {
-		emitLn('MOVE D0,-(SP)');
+	function push(type) {
+		move(type, 'D0', '-(SP)');
 	}
 
-	function popAdd() {
-		emitLn('ADD (SP)+,D0');
+	function pop(type) {
+		move(type, '(SP)+', 'D7');
 	}
 
-	function popSub() {
-		emitLn('SUB (SP)+,D0');
+	function popAdd(t1,t2) {
+		pop(t1);
+		t2=sameType(t1,t2);
+		emitLn(`ADD.${t2} D7,D0`);
+		return t2;
+	}
+
+	function popSub(t1,t2) {
+		pop(t1);
+		t2=sameType(t1,t2);
+		emitLn(`SUB.${t2} D7,D0`);
 		emitLn('NEG D0');
+		return t2;
 	}
 
-	function popMul() {
-		emitLn('MULS (SP)+,D0');
+	function popMul(t1,t2) {
+		pop(t1);
+		let t=sameType(t1,t2);
+		convert(t,'w','D7');
+		convert(t,'w','D0');
+		if (t==='l') {emitLn('JSR MUL32');}
+		else {emitLn('MULS D7,D0');}
+		return (t==='b' ? 'w' : 'l');
 	}
 
-	function popDiv() {
-		emitLn('MOVE (SP)+,D7');
-		emitLn('EXT.L D7');
-		emitLn('DIVS D0,D7');
-		emitLn('MOVE D7,D0');
+	function popDiv(t1,t2) {
+		pop(t1);
+		convert(t1,'l','D7');
+		if (t1==='l'||t2==='l') {
+			convert(t2,'l','D0');
+			emitLn('JSR DIV32');
+			return 'l';
+		}
+		else {
+			convert(t2,'w','D0');
+			emitLn('DIVS D0,D7');
+			move('w','D7','D0');
+			return t1
+		}
 	}
 
 	function notIt() {
@@ -661,15 +740,16 @@
 		emitLn('EXT D0');
 	}
 
-	function store(name) {
-		checkTable(name);
+	function store(name,t1) {
+		let t2=varType(name);
+		convert(t1,t2,'D0');
 		emitLn('LEA '+name+'(PC),A0');
-		emitLn('MOVE D0,(A0)');
+		move(t2, 'D0','(A0)');
 	}
 
 	function readVar() {
-		checkIdent()
-		checkTable(value);
+		checkIdent();
+		varType(value);
 		readIt(value)
 		next();
 	}

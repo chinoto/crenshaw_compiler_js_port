@@ -1,17 +1,9 @@
-var num,result
-
-PROCEDURE factorial(num)
-var a,b //Just for testing
-BEGIN
-	a=1
-	b=2
-	result=result*num
-	if num>1 factorial(num-1) endif
-END
+//Only */+- work, the rest has been broken implementing types
+BYTE b=2
+WORD w=3
+LONG l=4
+LONG result
 
 PROGRAM BEGIN
-	read(num)
-	result=1
-	factorial(num)
-	write(result)
+	result=(b+w)*l
 END
