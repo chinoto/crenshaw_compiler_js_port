@@ -38,8 +38,11 @@ Atom eats trailing spaces on save, so instead of tweaking settings to keep my li
 
 In the last update, I thought it would be a good idea to keep dead functions in case they were used later, but the few hundred extra lines of code and similarly named functions were causing some mental overhead, so they're gone thanks to the help of ESLint. If any of it really is helpful, I can get them back via version control.
 
+### Progress... Incomplete (2019-06-14)
+I read the last of the tutorial awhile ago to find it was incomplete and parts 15 & 16 were just attempts at refactoring. While I wish there were more to the tutorial, I can see why it is so highly recommended for starting to learn how compilers work. There's nothing more to the tutorial, so this repository ends here. I may try to find other resources and start on some kind of compiler to WASM.
+
 ## Extraneous Stuff
-Markdown assistance provided by [Dillinger]
+Markdown assistance provided by [Dillinger] and later by Atom's [Markdown Preview].
 
 [Damian J Pound]: <http://members.thebestisp.com/~damian/>
 [Transpiler]: <https://en.wikipedia.org/wiki/Source-to-source_compiler>
@@ -49,6 +52,7 @@ Markdown assistance provided by [Dillinger]
 [YCombinator Thread]: <https://news.ycombinator.com/item?id=2927784>
 [Crenshaw Tutorial]: <http://compilers.iecc.com/crenshaw/>
 [Dillinger]: <http://dillinger.io/>
+[Markdown Preview]: <https://atom.io/packages/markdown-preview>
 
 [//]: # (Nonsense about using javascript instead of a typical compiler language.)
 [dynamically typed]: <https://en.wikipedia.org/wiki/Programming_language#Static_versus_dynamic_typing>
